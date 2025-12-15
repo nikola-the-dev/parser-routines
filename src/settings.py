@@ -10,11 +10,14 @@ class Settings:
     class Key:
         source = "Source"
         feed = "Feed"
+        output = "Output"
         url = "url"
         category_path = "category_path"
         page_argumnet = "page_argumnet"
         product_type = "product_type"
         product_brand = "product_brand"
+        column_names = "column_names"
+        stock_names = "stock_names"
 
 
     class BaseItem:
@@ -46,6 +49,18 @@ class Settings:
             self.brand = section[keys.product_brand]
 
 
+    class Output:
+        sku_col_name = ""
+        stock_col_name = ""
+        stock_names = []
+
+        def __init__(self, section):
+            keys = Settings.Key
+            cols = section[keys.column_names]
+            self.sku_col_name, self.stock_col_name = [item.strip() for item in cols.split(",")]
+            self.stock_names = [item.strip() for item in section[keys.stock_names].split(",")]
+
+
 # Variables
 
 
@@ -66,4 +81,5 @@ class Settings:
         config.read(config_path)
 
         self.feed = Settings.Feed(config[self.Key.feed])
-        self.source = Settings.Soucre(config[self.Key.source])        
+        self.source = Settings.Soucre(config[self.Key.source])       
+        self.output = Settings.Output(config[self.Key.output]) 

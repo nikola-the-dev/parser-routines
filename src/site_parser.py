@@ -4,6 +4,7 @@ from urllib.parse import urlunsplit, urlencode
 import re
 from src.parsed_item import ParsedItem
 from src.str_ext import StrExt
+import time
 
 
 class SiteParser:
@@ -11,7 +12,7 @@ class SiteParser:
 # Variables
 
     currentPage = 1
-    items = dict()
+    items = set()
     reaches_end = False
 
 
@@ -36,7 +37,7 @@ class SiteParser:
     def _get_next_page(self):        
         if self.reaches_end:
             return        
-        
+                
         def price_pair(source):
             p_old = "0"
             p_new = "0"
@@ -52,6 +53,8 @@ class SiteParser:
             return (int(p_old), int(p_new))
         
         url = self._get_page_url()
+        print(f"Parsing page: {url}")
+        time.sleep(2)
         response = requests.get(url)
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -71,16 +74,17 @@ class SiteParser:
                 parsed.sku = sku
                 parsed.stock = ParsedItem.Stock.IN_STOCK
 
-                self.items[sku] = parsed
+                self.items.add(parsed)
             else:
                 self.reaches_end = True
                 break
-        self.currentPage += 1
+        self.currentPage += 1        
 
 
 # Public methods
 
     def parse(self):
+        print("Start parsing site...")
         while not self.reaches_end:
             self._get_next_page()
-        print(len(self.items))
+        print(f"Found {len(self.items)} items")

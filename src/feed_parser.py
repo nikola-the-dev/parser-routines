@@ -2,12 +2,16 @@ import xml.etree.ElementTree as et
 import requests
 from src.parsed_item import ParsedItem
 from src.str_ext import StrExt
+from enum import Enum
 
 class FeedParser:
 
 # Varibles
 
-    items = dict()
+    all_items = set()
+    available_items = set()
+    absence_items = set()
+    map_ids = dict()
 
 
 # Instance initialization
@@ -20,35 +24,51 @@ class FeedParser:
 # Private methods
 
     def _parse(self, settings):
+        print("Start parsing feed...")
         content = requests.get(settings.feed.url).content
         root = et.fromstring(content)
         items = root.find("channel").findall("item")
-        ns = {"g": "http://base.google.com/ns/1.0"}
+        
         for item in items:            
-            category = item.find("g:product_type", ns).text.lower()
-            if category.startswith(settings.feed.product_type.lower()):
-                brand = item.find("g:brand", ns).text.lower()                 
-                if brand == settings.feed.brand.lower():                
-                    sku = item.find("g:mpn", ns).text.lower()                                     
+
+            class FeedKey(str, Enum):
+                PRODUCT_TYPE = "g:product_type"
+                BRAND = "g:brand"
+                MPN = "g:mpn"
+                LINK = "g:link"
+                PRICE = "g:price"
+                SALE_PRICE = "g:sale_price"
+                AVAILABILITY = "g:availability"
+                ID = "g:id"
+
+                def parse(self, item, default_value = "", is_lower = True):
+                    ns = {"g": "http://base.google.com/ns/1.0"}
+                    element = item.find(self.value, ns)
+                    if element is not None:
+                        result = element.text
+                        return result.lower() if is_lower else result
+                    return default_value
+
+            feed = settings.feed
+            brand = FeedKey.BRAND.parse(item)
+            if brand == feed.brand.lower():                
+                category = FeedKey.PRODUCT_TYPE.parse(item)
+                if category.startswith(feed.product_type.lower()):                
+                    sku = FeedKey.MPN.parse(item)
+
+                    self.map_ids[sku] = FeedKey.ID.parse(item, sku, False)
 
                     parsed = ParsedItem()                    
                     parsed.sku = sku
-                    parsed.href = item.find("g:link", ns).text
-                    parsed.old_price = StrExt.digits(item.find("g:price", ns).text)                                     
-                    parsed.new_price = StrExt.digits(item.find("g:sale_price", ns).text)                                     
-                    availability = item.find("g:availability", ns).text.lower()
-                    match availability:
-                        case "in stock":
-                            parsed.stock = ParsedItem.Stock.IN_STOCK
-                        case "preorder":
-                            parsed.stock = ParsedItem.Stock.WAITING
-                        case _:
-                            parsed.stock = ParsedItem.Stock.OUT_STOCK
+                    parsed.href = FeedKey.LINK.parse(item)
+                    parsed.old_price = StrExt.digits(FeedKey.PRICE.parse(item, "0"))                                     
+                    parsed.new_price = StrExt.digits(FeedKey.SALE_PRICE.parse(item, "0"))                                     
+                    availability = FeedKey.AVAILABILITY.parse(item)
+                    parsed.stock = ParsedItem.Stock.get_feed(availability)                    
 
-                    self.items[sku] = parsed
-
-                    # g:availability - in stock - preorder - out of stock
-                    # preorder - Очікується
-                    # g:mpn
-                    # g:sale_price
-                    # g:price
+                    if parsed.stock == ParsedItem.Stock.IN_STOCK:                        
+                        self.available_items.add(parsed)
+                    else:
+                        self.absence_items.add(parsed)
+        self.all_items = self.available_items | self.absence_items
+        print(f"Found {len(self.all_items)} for category {feed.product_type} for {feed.brand}")
