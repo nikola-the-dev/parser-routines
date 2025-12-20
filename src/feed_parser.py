@@ -2,30 +2,46 @@ import xml.etree.ElementTree as et
 import requests
 from src.parsed_item import ParsedItem
 from src.str_ext import StrExt
+from src.settings import Settings
 from enum import Enum
+
 
 class FeedParser:
 
-# Varibles
+# Constants
 
-    all_items = set()
-    available_items = set()
-    absence_items = set()
+    class Item:
+    
+    # Instance initialization
+
+        def __init__(self):
+            self.available_items = set()
+            self.absence_items = set()
+
+    # Public methods
+
+        def all_items(self):
+            return self.available_items | self.absence_items
+
+
+# Varibles    
+
+    items = dict()
     map_ids = dict()
 
 
 # Instance initialization
 
-    def __init__(self, settings):
-        self.settings = settings
+    def __init__(self, settings: Settings):
         self._parse(settings)
         
 
 # Private methods
 
-    def _parse(self, settings):
+    def _parse(self, settings: Settings):
         print("Start parsing feed...")
-        content = requests.get(settings.feed.url).content
+        feed = settings.feed
+        content = requests.get(feed.url).content
         root = et.fromstring(content)
         items = root.find("channel").findall("item")
         
@@ -48,12 +64,16 @@ class FeedParser:
                         result = element.text
                         return result.lower() if is_lower else result
                     return default_value
-
-            feed = settings.feed
+            
             brand = FeedKey.BRAND.parse(item)
             if brand == feed.brand.lower():                
-                category = FeedKey.PRODUCT_TYPE.parse(item)
-                if category.startswith(feed.product_type.lower()):                
+                product_type = FeedKey.PRODUCT_TYPE.parse(item)
+                category = settings.get_category(product_type)
+                if category is not None:              
+                    feed_item = FeedParser.Item()
+                    if category in self.items:
+                        feed_item = self.items[category]
+
                     sku = FeedKey.MPN.parse(item)
 
                     self.map_ids[sku] = FeedKey.ID.parse(item, sku, False)
@@ -67,8 +87,11 @@ class FeedParser:
                     parsed.stock = ParsedItem.Stock.get_feed(availability)                    
 
                     if parsed.stock == ParsedItem.Stock.IN_STOCK:                        
-                        self.available_items.add(parsed)
+                        feed_item.available_items.add(parsed)
                     else:
-                        self.absence_items.add(parsed)
-        self.all_items = self.available_items | self.absence_items
-        print(f"Found {len(self.all_items)} for category {feed.product_type} for {feed.brand}")
+                        feed_item.absence_items.add(parsed)
+                    self.items[category] = feed_item
+        
+        for category in self.items:
+            feed_item: FeedParser.Item = self.items[category]
+            print(f"For {category} found {len(feed_item.available_items)} available items and {len(feed_item.absence_items)} are out of stock items")
